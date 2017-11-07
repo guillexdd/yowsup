@@ -5,6 +5,7 @@ from yowsup.layers.protocol_messages.proto.wa_pb2 import *
 from yowsup.layers.axolotl.protocolentities import *
 from yowsup.structs import ProtocolTreeNode
 from yowsup.layers.axolotl.props import PROP_IDENTITY_AUTOTRUST
+from yowsup.layers.axolotl.props import PROP_IGNORE_UNHANDLED
 
 from axolotl.protocol.prekeywhispermessage import PreKeyWhisperMessage
 from axolotl.protocol.whispermessage import WhisperMessage
@@ -22,7 +23,6 @@ from axolotl.protocol.senderkeydistributionmessage import SenderKeyDistributionM
 
 import logging
 import copy
-import sys
 logger = logging.getLogger(__name__)
 
 class AxolotlReceivelayer(AxolotlBaseLayer):
@@ -167,8 +167,6 @@ class AxolotlReceivelayer(AxolotlBaseLayer):
     def parseAndHandleMessageProto(self, encMessageProtocolEntity, serializedData):
         node = encMessageProtocolEntity.toProtocolTreeNode()
         m = Message()
-        if sys.version_info >= (3,0) and isinstance(serializedData,str):
-            serializedData = serializedData.encode() 
         handled = False
         try:
             m.ParseFromString(serializedData)
@@ -176,7 +174,7 @@ class AxolotlReceivelayer(AxolotlBaseLayer):
             print("DUMP:")
             print(serializedData)
             print([s for s in serializedData])
-            #print([ord(s) for s in serializedData])
+            print([ord(s) for s in serializedData])
             raise
         if not m or not serializedData:
             raise ValueError("Empty message")
@@ -185,10 +183,6 @@ class AxolotlReceivelayer(AxolotlBaseLayer):
             handled = True
             axolotlAddress = AxolotlAddress(encMessageProtocolEntity.getParticipant(False), 0)
             self.handleSenderKeyDistributionMessage(m.sender_key_distribution_message, axolotlAddress)
-        
-        print("MESSAGE")
-        print(node)
-        print(m)
 
         if m.HasField("conversation"):
             handled = True
@@ -205,13 +199,14 @@ class AxolotlReceivelayer(AxolotlBaseLayer):
         elif m.HasField("image_message"):
             handled = True
             self.handleImageMessage(node, m.image_message)
-        elif m.HasField("video_message"):
-            handled = True
-            print(node)
-            #raise("OPA")
+
         if not handled:
-            print(m)
-            raise ValueError("Unhandled")
+            if PROP_IGNORE_UNHANDLED:
+                self.toLower(OutgoingReceiptProtocolEntity(node["id"], node["from"], participant=node["participant"]).toProtocolTreeNode())
+                logger.warning("Unhandled message, sending delivery receipt")
+            else:
+                print(m)
+                raise ValueError("Unhandled")
 
     def handleSenderKeyDistributionMessage(self, senderKeyDistributionMessage, axolotlAddress):
         groupId = senderKeyDistributionMessage.groupId
@@ -237,7 +232,6 @@ class AxolotlReceivelayer(AxolotlBaseLayer):
             "mimetype": imageMessage.mime_type,
             "width": imageMessage.width,
             "height": imageMessage.height,
-            "mediakey": imageMessage.media_key,
             "caption": imageMessage.caption,
             "encoding": "raw",
             "file": "enc",
@@ -260,7 +254,7 @@ class AxolotlReceivelayer(AxolotlBaseLayer):
         messageNode["type"] = "media"
         mediaNode = ProtocolTreeNode("media", {
             "latitude": locationMessage.degrees_latitude,
-            "longitude": locationMessage.degrees_longitude,
+            "longitude": locationMessage.degress_longitude,
             "name": "%s %s" % (locationMessage.name, locationMessage.address),
             "url": locationMessage.url,
             "encoding": "raw",
